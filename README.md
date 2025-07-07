@@ -23,7 +23,10 @@ PC端的模拟器经过了功能增强，使用轻量级的 **`miniaudio`** 库�
 ### 1. C++ 编译器 (MinGW-w64)
 
 你需要一个C++编译器。本项目推荐使用 **MinGW-w64** (通过 MSYS2 安装)。如果你尚未安装，请参照相关教程完成安装，并确保已将编译器的 `bin` 目录（例如 `C:\msys64\mingw64\bin`）添加到了系统的 `PATH` 环境变量中。
-
+- MSYS2下载[https://www.msys2.org](https://www.msys2.org)
+- 打开 MSYS2 MINGW64 终端
+- 运行`pacman -Syu`更新软件包,更新完后应该会自动关闭窗口
+- 重新打开MSYS2 MINGW64 终端，运行`pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb mingw-w64-x86_64-make` 安装 64 位的 MinGW-w64 GCC 工具链。
 ### 2. `miniaudio.h` 音频库文件
 
 本项目依赖 `miniaudio` 这个单头文件库。

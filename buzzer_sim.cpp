@@ -4,37 +4,37 @@
 #include <chrono>
 #include <atomic>
 
-// This preprocessor check ensures this file is only compiled when PLATFORM_PC is defined.
+// 此预处理器检查确保此文件仅在定义了 PLATFORM_PC 时才被编译。
 #ifdef PLATFORM_PC
 
-// By including miniaudio's implementation *after* all other standard headers,
-// we can sometimes avoid obscure compiler/linker errors.
+// 通过在所有其他标准头文件之后包含 miniaudio 的实现，
+// 我们可以有时避免模糊的编译器/链接器错误。
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
-// Structure to hold our audio state, shared between main thread and audio callback
+// 用于保存音频状态的结构体，在主线程和音频回调之间共享
 struct AudioState {
     std::atomic<double> frequency;
     std::atomic<double> phase;
     std::atomic<bool> is_playing;
 };
 
-// Default-initialize the global state object. We will set its values in buzzer_init.
+// 默认初始化全局状态对象。我们将在 buzzer_init 中设置其值。
 static AudioState g_audio_state;
 static ma_device g_audio_device;
 static bool g_audio_initialized = false;
 
-// This function is called by miniaudio in a separate thread to generate audio samples.
+// 此函数由 miniaudio 在单独的线程中调用以生成音频样本。
 void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
-    (void)pInput; // Unused.
+    (void)pInput; // 未使用。
 
     float* pOutputF32 = (float*)pOutput;
     double freq = g_audio_state.frequency.load();
     bool is_playing = g_audio_state.is_playing.load();
     
     if (freq <= 0 || !is_playing) {
-        // If not playing or frequency is invalid, output silence.
+        // 如果未播放或频率无效，则输出静音。
         for (ma_uint32 i = 0; i < frameCount; ++i) {
             pOutputF32[i] = 0.0f;
         }
@@ -46,11 +46,11 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
     double phase_increment = freq / sampleRate;
 
     for (ma_uint32 i = 0; i < frameCount; ++i) {
-        // Generate a square wave
+        // 生成方波
         if (phase < 0.5) {
-            pOutputF32[i] = 0.2f; // Amplitude
+            pOutputF32[i] = 0.2f; // 幅度
         } else {
-            pOutputF32[i] = -0.2f; // Amplitude
+            pOutputF32[i] = -0.2f; // 幅度
         }
         
         phase += phase_increment;
@@ -62,13 +62,13 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 }
 
 void buzzer_init(int pin) {
-    (void)pin; // Pin is ignored in simulation.
+    (void)pin; // 在模拟中忽略引脚。
 
     if (g_audio_initialized) {
         return;
     }
 
-    // Explicitly initialize the atomic members using store(). This is the safest way.
+    // 使用 store() 显式初始化原子成员。这是最安全的方法。
     g_audio_state.frequency.store(0.0);
     g_audio_state.phase.store(0.0);
     g_audio_state.is_playing.store(false);
@@ -80,25 +80,25 @@ void buzzer_init(int pin) {
     deviceConfig.dataCallback      = data_callback;
 
     if (ma_device_init(NULL, &deviceConfig, &g_audio_device) != MA_SUCCESS) {
-        std::cerr << "[BUZZER_SIM] Failed to initialize audio device." << std::endl;
+        std::cerr << "[BUZZER_SIM] 初始化音频设备失败。" << std::endl;
         return;
     }
     
     g_audio_initialized = true;
-    std::cout << "[BUZZER_SIM] miniaudio device initialized successfully." << std::endl;
+    std::cout << "[BUZZER_SIM] miniaudio 设备初始化成功。" << std::endl;
 }
 
 void buzzer_play(int frequency, int duration_ms) {
     if (!g_audio_initialized) return;
 
     if (frequency > 0) {
-        std::cout << "[BUZZER_SIM] Playing " << frequency << "Hz for " << duration_ms << "ms" << std::endl;
+        std::cout << "[BUZZER_SIM] 播放 " << frequency << "Hz 持续 " << duration_ms << "ms" << std::endl;
         buzzer_start(frequency);
         std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
         buzzer_stop();
     } else {
-        std::cout << "[BUZZER_SIM] Pausing for " << duration_ms << "ms" << std::endl;
-        buzzer_stop(); // Ensure silence
+        std::cout << "[BUZZER_SIM] 暂停 " << duration_ms << "ms" << std::endl;
+        buzzer_stop(); // 确保静音
         std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
     }
 }
@@ -119,20 +119,20 @@ void buzzer_stop() {
     if (!g_audio_initialized) return;
     
     g_audio_state.is_playing.store(false);
-    // We don't stop the device, just output silence. This is more efficient.
+    // 我们不停止设备，只输出静音。这更高效。
 }
 
 void buzzer_play_melody(const Note* melody, int length) {
-    std::cout << "[BUZZER_SIM] Playing melody with " << length << " notes." << std::endl;
+    std::cout << "[BUZZER_SIM] 播放包含 " << length << " 个音符的旋律。" << std::endl;
     for (int i = 0; i < length; ++i) {
         buzzer_play(melody[i].frequency, melody[i].duration_ms);
-        // The small delay between notes is now handled by the precise timing of buzzer_play.
+        // 音符之间的短暂延迟现在由 buzzer_play 的精确计时处理。
     }
-    std::cout << "[BUZZER_SIM] Melody finished." << std::endl;
+    std::cout << "[BUZZER_SIM] 旋律播放完毕。" << std::endl;
 }
 
-// We should uninitialize the device when the program exits, but for this simple
-// simulation, we'll let the OS clean it up. A more robust implementation would
-// use RAII or an explicit buzzer_deinit() function.
+// 当程序退出时，我们应该取消初始化设备，但对于这个简单的
+// 模拟，我们将让操作系统清理它。更健壮的实现会
+// 使用 RAII 或显式的 buzzer_deinit() 函数。
 
 #endif // PLATFORM_PC

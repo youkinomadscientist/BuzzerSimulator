@@ -74,32 +74,16 @@ int main() {
     // 初始化蜂鸣器
     buzzer_init(BUZZER_PIN);
 
-    // --- 调试运行逻辑 ---
-    // 我们暂时注释掉所有的业务逻辑，来测试程序是否能正常退出。
-    // 如果这次窗口能正常关闭，说明问题就出在下面被注释的函数调用中。
-
     // 1. 播放开机提示音
     play_startup_sound();
+    Sleep(1000);
 
-    // 2. 演示非阻塞播放（在模拟器上仅打印日志）
-    buzzer_start(1000);
-    #ifdef _WIN32
-        Sleep(1000);
-    #else
-        sleep(1);
-    #endif
-    buzzer_stop();
-
-    // 3. 播放错误提示音
-    play_error_alert();
-
-    // 4. 播放一段更长的旋律
+    // 播放一段更长的旋律
     play_twinkle_star();
 
-    // 在程序完全退出前加入一个短暂延时，确保所有声音都有时间播放
-    #ifdef _WIN32
-        Sleep(500);
-    #endif
+    // 播放错误提示音
+    play_error_alert();
+    Sleep(500);
     return 0;
 }
 
