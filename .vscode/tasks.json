@@ -1,0 +1,34 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Buzzer Project with miniaudio",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-g",
+                "-std=c++11",
+                "-DPLATFORM_PC",
+                "${workspaceFolder}/main.cpp",
+                "${workspaceFolder}/buzzer_sim.cpp",
+                "-o",
+                "${workspaceFolder}/buzzer_simulator.exe",
+                "-lkernel32",
+                "-lwinmm",
+                "-lole32"
+            ],
+            "options": {
+                "env": {
+                    "Path": "C:\\msys64\\mingw64\\bin;${env:Path}"
+                }
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        }
+    ]
+}

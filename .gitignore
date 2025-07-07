@@ -1,0 +1,5 @@
+# Executables
+*.exe
+
+# Test files
+test.cpp
