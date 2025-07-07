@@ -3,81 +3,157 @@
 // 此预处理器确保该文件仅在定义了 PLATFORM_ESP32 时才被编译
 #ifdef PLATFORM_ESP32
 
-#include "driver/ledc.h"
-#include "freertos/FreeRTOS.h"
+#include <Arduino.h>
+#include "esp32-hal-ledc.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
 
-// 定义 LEDC（LED 控制器）常量
-#define LEDC_TIMER              LEDC_TIMER_0
-#define LEDC_MODE               LEDC_HIGH_SPEED_MODE
-#define LEDC_CHANNEL            LEDC_CHANNEL_0
-#define LEDC_DUTY_RES           LEDC_TIMER_10_BIT // 10位分辨率 (1024级)
-#define LEDC_DUTY_50_PERCENT    (512)             // 50% 的占空比，用于产生方波
+#if SOC_LEDC_SUPPORTED
+static TaskHandle_t _tone_task = NULL;
+static QueueHandle_t _tone_queue = NULL;
+static int8_t _pin = -1;
+static uint8_t _channel = 255;
 
-static int g_buzzer_pin = -1; // 全局变量，存储蜂鸣器引脚
+typedef enum {
+  TONE_START,
+  TONE_END
+} tone_cmd_t;
 
-void buzzer_init(int pin) {
-    g_buzzer_pin = pin;
+typedef struct {
+  tone_cmd_t tone_cmd;
+  uint8_t pin;
+  unsigned int frequency;
+  unsigned long duration;
+} tone_msg_t;
 
-    // 准备并应用 LEDC PWM 定时器配置
-    ledc_timer_config_t ledc_timer = {
-        .speed_mode       = LEDC_MODE,
-        .duty_resolution  = LEDC_DUTY_RES,
-        .timer_num        = LEDC_TIMER,
-        .freq_hz          = 5000,  // 设置一个默认的初始频率
-        .clk_cfg          = LEDC_AUTO_CLK
-    };
-    ledc_timer_config(&ledc_timer);
+#ifdef SOC_LEDC_SUPPORT_HS_MODE
+#define LEDC_CHANNELS (SOC_LEDC_CHANNEL_NUM << 1)
+#else
+#define LEDC_CHANNELS (SOC_LEDC_CHANNEL_NUM)
+#endif
 
-    // 准备并应用 LEDC PWM 通道配置
-    ledc_channel_config_t ledc_channel = {
-        .gpio_num       = g_buzzer_pin,
-        .speed_mode     = LEDC_MODE,
-        .channel        = LEDC_CHANNEL,
-        .intr_type      = LEDC_INTR_DISABLE,
-        .timer_sel      = LEDC_TIMER,
-        .duty           = 0, // 初始占空比为0，即不发声
-        .hpoint         = 0
-    };
-    ledc_channel_config(&ledc_channel);
-}
+static void tone_task(void *) {
+  tone_msg_t tone_msg;
+  while (1) {
+    xQueueReceive(_tone_queue, &tone_msg, portMAX_DELAY);
+    switch (tone_msg.tone_cmd) {
+      case TONE_START:
+        // log_d("Task received from queue TONE_START: pin=%d, frequency=%u Hz, duration=%lu ms", tone_msg.pin, tone_msg.frequency, tone_msg.duration);
 
-void buzzer_play(int frequency, int duration_ms) {
-    if (frequency > 0) {
-        buzzer_start(frequency);
-        vTaskDelay(duration_ms / portTICK_PERIOD_MS); // 使用FreeRTOS的延时
-        buzzer_stop();
-    } else {
-        // 频率为 0 表示暂停
-        vTaskDelay(duration_ms / portTICK_PERIOD_MS);
-    }
-}
-
-void buzzer_start(int frequency) {
-    if (frequency > 0) {
-        // 设置 PWM 频率
-        ledc_set_freq(LEDC_MODE, LEDC_TIMER, frequency);
-        // 设置 50% 的占空比以产生声音
-        ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, LEDC_DUTY_50_PERCENT);
-        // 更新占空比以应用设置
-        ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
-    }
-}
-
-void buzzer_stop() {
-    // 将占空比设置为 0 以停止声音
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 0);
-    ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
-}
-
-void buzzer_play_melody(const Note* melody, int length) {
-    for (int i = 0; i < length; ++i) {
-        buzzer_play(melody[i].frequency, melody[i].duration_ms);
-        // 在音符之间添加一个小延迟，使它们听起来更分明
-        if (i < length - 1) {
-            vTaskDelay(50 / portTICK_PERIOD_MS);
+        if (_pin == -1) {
+          bool ret = true;
+          if (_channel == 255) {
+            ret = ledcAttach(tone_msg.pin, tone_msg.frequency, 10);
+          } else {
+            ret = ledcAttachChannel(tone_msg.pin, tone_msg.frequency, 10, _channel);
+          }
+          if (!ret) {
+            // log_e("Tone start failed");
+            break;
+          }
+          _pin = tone_msg.pin;
         }
-    }
+        ledcWriteTone(tone_msg.pin, tone_msg.frequency);
+
+        if (tone_msg.duration) {
+          delay(tone_msg.duration);
+          ledcWriteTone(tone_msg.pin, 0);
+        }
+        break;
+
+      case TONE_END:
+        // log_d("Task received from queue TONE_END: pin=%d", tone_msg.pin);
+        ledcWriteTone(tone_msg.pin, 0);
+        ledcDetach(tone_msg.pin);
+        _pin = -1;
+        break;
+
+      default:;  // do nothing
+    }  // switch
+  }  // infinite loop
 }
+
+static int tone_init() {
+  if (_tone_queue == NULL) {
+    // log_v("Creating tone queue");
+    _tone_queue = xQueueCreate(128, sizeof(tone_msg_t));
+    if (_tone_queue == NULL) {
+      // log_e("Could not create tone queue");
+      return 0;  // ERR
+    }
+    // log_v("Tone queue created");
+  }
+
+  if (_tone_task == NULL) {
+    // log_v("Creating tone task");
+    xTaskCreate(
+      tone_task,   // Function to implement the task
+      "toneTask",  // Name of the task
+      3500,        // Stack size in words
+      NULL,        // Task input parameter
+      10,          // Priority of the task must be higher than Arduino task
+      &_tone_task  // Task handle.
+    );
+    if (_tone_task == NULL) {
+      // log_e("Could not create tone task");
+      return 0;  // ERR
+    }
+    // log_v("Tone task created");
+  }
+  return 1;  // OK
+}
+
+void noTone(uint8_t pin) {
+  // log_d("noTone was called");
+  if (_pin == pin) {
+    if (tone_init()) {
+      tone_msg_t tone_msg = {
+        .tone_cmd = TONE_END,
+        .pin = pin,
+        .frequency = 0,  // Ignored
+        .duration = 0,   // Ignored
+      };
+      xQueueReset(_tone_queue);  // clear queue
+      xQueueSend(_tone_queue, &tone_msg, portMAX_DELAY);
+    }
+  } else {
+    // log_e("Tone is not running on given pin %d", pin);
+  }
+}
+
+// parameters:
+// pin - pin number which will output the signal
+// frequency - PWM frequency in Hz
+// duration - time in ms - how long will the signal be outputted.
+//   If not provided, or 0 you must manually call noTone to end output
+void tone(uint8_t pin, unsigned int frequency, unsigned long duration) {
+  // log_d("pin=%d, frequency=%u Hz, duration=%lu ms", pin, frequency, duration);
+  if (_pin == -1 || _pin == pin) {
+    if (tone_init()) {
+      tone_msg_t tone_msg = {
+        .tone_cmd = TONE_START,
+        .pin = pin,
+        .frequency = frequency,
+        .duration = duration,
+      };
+      xQueueSend(_tone_queue, &tone_msg, portMAX_DELAY);
+      return;
+    }
+  } else {
+    // log_e("Tone is still running on pin %d, call noTone(%d) first!", _pin, _pin);
+    return;
+  }
+}
+
+void setToneChannel(uint8_t channel) {
+  if (channel >= LEDC_CHANNELS) {
+    // log_e("Channel %u is not available (maximum %u)!", channel, LEDC_CHANNELS);
+    return;
+  }
+  _channel = channel;
+}
+
+#endif /* SOC_LEDC_SUPPORTED */
 
 #endif // PLATFORM_ESP32

@@ -61,21 +61,19 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
     g_audio_state.phase.store(phase);
 }
 
-void buzzer_init(int pin) {
-    (void)pin; // 在模拟中忽略引脚。
-
+// 辅助函数，用于初始化 miniaudio（如果尚未初始化）
+static void ensure_audio_initialized() {
     if (g_audio_initialized) {
         return;
     }
 
-    // 使用 store() 显式初始化原子成员。这是最安全的方法。
     g_audio_state.frequency.store(0.0);
     g_audio_state.phase.store(0.0);
     g_audio_state.is_playing.store(false);
 
     ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
     deviceConfig.playback.format   = ma_format_f32;
-    deviceConfig.playback.channels = 1; // Mono
+    deviceConfig.playback.channels = 1; // 单声道
     deviceConfig.sampleRate        = 48000;
     deviceConfig.dataCallback      = data_callback;
 
@@ -88,47 +86,40 @@ void buzzer_init(int pin) {
     std::cout << "[BUZZER_SIM] miniaudio 设备初始化成功。" << std::endl;
 }
 
-void buzzer_play(int frequency, int duration_ms) {
+void tone(uint8_t pin, unsigned int frequency, unsigned long duration) {
+    (void)pin; // 在模拟中忽略引脚。
+    ensure_audio_initialized();
     if (!g_audio_initialized) return;
 
-    if (frequency > 0) {
-        std::cout << "[BUZZER_SIM] 播放 " << frequency << "Hz 持续 " << duration_ms << "ms" << std::endl;
-        buzzer_start(frequency);
-        std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
-        buzzer_stop();
-    } else {
-        std::cout << "[BUZZER_SIM] 暂停 " << duration_ms << "ms" << std::endl;
-        buzzer_stop(); // 确保静音
-        std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
+    std::cout << "[BUZZER_SIM] tone(pin=" << (int)pin << ", freq=" << frequency << ", dur=" << duration << ")" << std::endl;
+
+    g_audio_state.frequency.store((double)frequency);
+    g_audio_state.is_playing.store(true);
+
+    // 启动设备（如果尚未启动）
+    if (ma_device_get_state(&g_audio_device) != ma_device_state_started) {
+        ma_device_start(&g_audio_device);
+    }
+
+    if (duration > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(duration));
+        noTone(pin);
     }
 }
 
-void buzzer_start(int frequency) {
-    if (!g_audio_initialized) return;
-
-    if (frequency > 0) {
-        g_audio_state.frequency.store((double)frequency);
-        g_audio_state.is_playing.store(true);
-        if (ma_device_get_state(&g_audio_device) != ma_device_state_started) {
-            ma_device_start(&g_audio_device);
-        }
-    }
-}
-
-void buzzer_stop() {
+void noTone(uint8_t pin) {
+    (void)pin; // 在模拟中忽略引脚。
     if (!g_audio_initialized) return;
     
+    std::cout << "[BUZZER_SIM] noTone(pin=" << (int)pin << ")" << std::endl;
     g_audio_state.is_playing.store(false);
     // 我们不停止设备，只输出静音。这更高效。
 }
 
-void buzzer_play_melody(const Note* melody, int length) {
-    std::cout << "[BUZZER_SIM] 播放包含 " << length << " 个音符的旋律。" << std::endl;
-    for (int i = 0; i < length; ++i) {
-        buzzer_play(melody[i].frequency, melody[i].duration_ms);
-        // 音符之间的短暂延迟现在由 buzzer_play 的精确计时处理。
-    }
-    std::cout << "[BUZZER_SIM] 旋律播放完毕。" << std::endl;
+void setToneChannel(uint8_t channel) {
+    // 在 PC 模拟中，此函数为空实现，因为通道是 ESP32 特有的概念。
+    (void)channel;
+    std::cout << "[BUZZER_SIM] setToneChannel(" << (int)channel << ") - 在模拟器中无操作。" << std::endl;
 }
 
 // 当程序退出时，我们应该取消初始化设备，但对于这个简单的
