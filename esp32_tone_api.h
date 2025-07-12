@@ -1,5 +1,5 @@
-#ifndef BUZZER_HAL_H
-#define BUZZER_HAL_H
+#ifndef ESP32_TONE_API_H
+#define ESP32_TONE_API_H
 
 #include <stdint.h>
 
@@ -27,4 +27,4 @@ void noTone(uint8_t pin);
  */
 void setToneChannel(uint8_t channel);
 
-#endif // BUZZER_HAL_H
+#endif // ESP32_TONE_API_H

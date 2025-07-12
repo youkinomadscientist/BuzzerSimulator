@@ -5,7 +5,7 @@
             "name": "Debug Buzzer (miniaudio)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/buzzer_simulator.exe",
+            "program": "${workspaceFolder}/build/buzzer_simulator.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
